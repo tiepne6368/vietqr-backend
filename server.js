@@ -1,20 +1,20 @@
 /**
- * BACKEND ĐỐI SOÁT GIAO DỊCH VIETQR THỰC TẾ (server.js - SQLite3)
+ * BACKEND ĐỐI SOÁT VIETQR & LƯU TRỮ ẢNH DÀI HẠN (server.js)
  */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
+const storage = require('./storage');
 
 const app = express();
-const dbFile = 'vietqr_reconciliation.db';
-const db = new sqlite3.Database(dbFile);
+const db = new sqlite3.Database('vietqr_reconciliation.db');
 
 const EXPECTED_ACCOUNT = process.env.BANK_ACCOUNT || '0913931376';
 const WEBHOOK_SECRET = (process.env.WEBHOOK_SECRET || 'TIEP_VIETINBANK_2026').trim();
 
-// Khởi tạo bảng lưu trữ an toàn trên máy chủ
+// Khởi tạo bảng có thêm cột qr_image để lưu ảnh PNG dài hạn
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS payment_orders (
@@ -25,9 +25,11 @@ db.serialize(() => {
       actual_amount INTEGER,
       bank_tx_id TEXT,
       paid_at TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      qr_image TEXT
     )
   `);
+  db.run(`ALTER TABLE payment_orders ADD COLUMN qr_image TEXT`, () => {});
   db.run(`
     CREATE TABLE IF NOT EXISTS verified_transactions (
       bank_tx_id TEXT PRIMARY KEY,
@@ -39,47 +41,113 @@ db.serialize(() => {
       reconcile_status TEXT NOT NULL,
       raw_hash TEXT NOT NULL
     )
-  `);
+  `, () => {
+    storage.initAndRestoreSqlite(db);
+  });
 });
 
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json({
+  limit: '15mb',
   verify: (req, res, buf) => { req.rawBody = buf; }
 }));
+app.use(express.static(__dirname));
 
-// 1. Healthcheck endpoint
+// 1. Kiểm tra hoạt động
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'VietQR Verification Backend', account: EXPECTED_ACCOUNT });
 });
 
-// 2. Đăng ký lệnh chờ thanh toán từ Frontend
+// 2. Tạo đơn mã QR mới kèm ảnh PNG
 app.post('/api/orders', (req, res) => {
-  const { orderId, amount, content, createdAt } = req.body;
+  const { orderId, amount, content, createdAt, qrImage } = req.body;
   if (!orderId) return res.status(400).json({ error: 'Thiếu orderId' });
-  
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO payment_orders (order_id, expected_amount, expected_content, status, created_at)
-    VALUES (?, ?, ?, 'PENDING', ?)
-  `);
-  stmt.run(String(orderId), Number(amount || 0), String(content || ''), createdAt || new Date().toISOString(), function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ ok: true, status: 'PENDING' });
-  });
-  stmt.finalize();
+
+  db.run(
+    `INSERT OR IGNORE INTO payment_orders (order_id, expected_amount, expected_content, status, created_at, qr_image)
+     VALUES (?, ?, ?, 'PENDING', ?, ?)`,
+    [String(orderId), Number(amount || 0), String(content || ''), createdAt || new Date().toISOString(), qrImage || null],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      storage.snapshotSqliteToFile(db);
+      res.json({ ok: true, status: 'PENDING' });
+    }
+  );
 });
 
-// 3. Truy vấn trạng thái thực tế
+// 3. Đồng bộ 2 chiều: Khôi phục lịch sử từ trình duyệt lên Server nếu Render vừa bị reset
+app.post('/api/sync', (req, res) => {
+  const clientOrders = Array.isArray(req.body?.orders) ? req.body.orders : [];
+  const clientTxs = Array.isArray(req.body?.transactions) ? req.body.transactions : [];
+
+  db.serialize(() => {
+    const stmtOrd = db.prepare(`
+      INSERT OR IGNORE INTO payment_orders (order_id, expected_amount, expected_content, status, actual_amount, bank_tx_id, paid_at, created_at, qr_image)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    clientOrders.forEach(o => {
+      if (o && o.id) {
+        stmtOrd.run(
+          String(o.id),
+          Number(o.amount || 0),
+          String(o.content || ''),
+          String(o.status || 'PENDING'),
+          o.actualAmount || null,
+          o.bankTxId || null,
+          o.paidAt || null,
+          o.createdAt || new Date().toISOString(),
+          o.qrImage || null
+        );
+        // Nếu phía client chưa có trạng thái mới nhưng gửi ảnh lên thì cập nhật ảnh
+        if (o.qrImage) {
+          db.run(`UPDATE payment_orders SET qr_image = COALESCE(qr_image, ?) WHERE order_id = ?`, [o.qrImage, String(o.id)]);
+        }
+      }
+    });
+    stmtOrd.finalize();
+
+    const stmtTx = db.prepare(`
+      INSERT OR IGNORE INTO verified_transactions (bank_tx_id, account_number, amount, content, transaction_time, matched_order_id, reconcile_status, raw_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    clientTxs.forEach(tx => {
+      if (tx && tx.bank_tx_id) {
+        stmtTx.run(
+          String(tx.bank_tx_id),
+          String(tx.account_number || EXPECTED_ACCOUNT),
+          Number(tx.amount || 0),
+          String(tx.content || ''),
+          tx.transaction_time || new Date().toISOString(),
+          tx.matched_order_id || null,
+          tx.reconcile_status || 'RECEIVED',
+          tx.raw_hash || 'client-sync'
+        );
+      }
+    });
+    stmtTx.finalize(() => {
+      storage.snapshotSqliteToFile(db);
+      db.all('SELECT * FROM payment_orders ORDER BY created_at DESC LIMIT 500', [], (err, orders) => {
+        if (err) return res.status(500).json({ error: err.message });
+        db.all('SELECT * FROM verified_transactions ORDER BY transaction_time DESC LIMIT 500', [], (err2, transactions) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          res.json({ ok: true, orders: orders || [], transactions: transactions || [] });
+        });
+      });
+    });
+  });
+});
+
+// 4. Truy vấn trạng thái
 app.get('/api/status', (req, res) => {
-  db.all('SELECT * FROM payment_orders ORDER BY created_at DESC LIMIT 100', [], (err, orders) => {
+  db.all('SELECT * FROM payment_orders ORDER BY created_at DESC LIMIT 500', [], (err, orders) => {
     if (err) return res.status(500).json({ error: err.message });
-    db.all('SELECT * FROM verified_transactions ORDER BY transaction_time DESC LIMIT 100', [], (err2, transactions) => {
+    db.all('SELECT * FROM verified_transactions ORDER BY transaction_time DESC LIMIT 500', [], (err2, transactions) => {
       if (err2) return res.status(500).json({ error: err2.message });
       res.json({ ok: true, orders: orders || [], transactions: transactions || [] });
     });
   });
 });
 
-// Hàm xác thực bảo mật
 function verifyWebhookAuth(req, secret) {
   if (!secret) return true;
   const tokenHeader = (
@@ -89,33 +157,29 @@ function verifyWebhookAuth(req, secret) {
     req.headers['authorization'] ||
     ''
   ).trim();
-
-  if (tokenHeader === secret || tokenHeader === `Bearer ${secret}` || tokenHeader === `Apikey ${secret}`) {
-    return true;
-  }
+  if (tokenHeader === secret || tokenHeader === `Bearer ${secret}` || tokenHeader === `Apikey ${secret}`) return true;
   const signature = req.headers['x-webhook-signature'] || '';
   if (signature && req.rawBody) {
     const computedSig = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
     if (signature === computedSig) return true;
   }
-  return true; // Cho phép đi qua nếu test từ Casso/SePay
+  return true;
 }
 
-// 4. Webhook nhận biến động số dư
+// 5. Webhook nhận biến động số dư
 app.post('/api/webhook/bank', (req, res) => {
-  console.log('--- Nhận tín hiệu Webhook mới ---');
   if (!verifyWebhookAuth(req, WEBHOOK_SECRET)) {
     return res.status(401).json({ error: 'Chữ ký Webhook không hợp lệ' });
   }
 
   const rawList = Array.isArray(req.body?.data) ? req.body.data : [req.body];
   const results = [];
-
-  // Xử lý tuần tự các giao dịch
   let i = 0;
+
   function processNext() {
     if (i >= rawList.length) {
-      return res.status(200).json({ error: 0, ok: true, message: 'Webhook processed successfully', results });
+      storage.snapshotSqliteToFile(db);
+      return res.status(200).json({ error: 0, ok: true, results });
     }
     const item = rawList[i++];
     if (!item || typeof item !== 'object') return processNext();
@@ -126,9 +190,7 @@ app.post('/api/webhook/bank', (req, res) => {
     const transactionDate = item.transactionDate || item.when || new Date().toISOString();
     const accountNumber = item.accountNumber || item.subAccId || item.bank_sub_acc_id || EXPECTED_ACCOUNT;
 
-    if (!transactionId || transferAmount === undefined) {
-      return processNext();
-    }
+    if (!transactionId || transferAmount === undefined) return processNext();
 
     db.get('SELECT bank_tx_id FROM verified_transactions WHERE bank_tx_id = ?', [String(transactionId)], (err, existingTx) => {
       if (existingTx) {
@@ -152,11 +214,7 @@ app.post('/api/webhook/bank', (req, res) => {
 
         let finalOrderStatus = 'REVIEW';
         if (matchedOrder) {
-          if (matchedOrder.expected_amount === 0 || matchedOrder.expected_amount === actualAmt) {
-            finalOrderStatus = 'RECEIVED';
-          } else {
-            finalOrderStatus = 'REVIEW';
-          }
+          finalOrderStatus = (matchedOrder.expected_amount === 0 || matchedOrder.expected_amount === actualAmt) ? 'RECEIVED' : 'REVIEW';
           db.run(
             `UPDATE payment_orders SET status = ?, actual_amount = ?, bank_tx_id = ?, paid_at = ? WHERE order_id = ?`,
             [finalOrderStatus, actualAmt, String(transactionId), transactionDate, matchedOrder.order_id]
@@ -165,10 +223,10 @@ app.post('/api/webhook/bank', (req, res) => {
 
         const rawHash = crypto.createHash('sha256').update(JSON.stringify(item)).digest('hex');
         db.run(
-          `INSERT INTO verified_transactions (bank_tx_id, account_number, amount, content, transaction_time, matched_order_id, reconcile_status, raw_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO verified_transactions (bank_tx_id, account_number, amount, content, transaction_time, matched_order_id, reconcile_status, raw_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [String(transactionId), String(accountNumber), actualAmt, String(content), transactionDate, matchedOrder ? matchedOrder.order_id : null, finalOrderStatus, rawHash],
           () => {
-            console.log(`Đã ghi nhận giao dịch: ${transactionId} | Số tiền: ${actualAmt} | Trạng thái: ${finalOrderStatus}`);
             results.push({ transactionId, status: finalOrderStatus });
             processNext();
           }
@@ -180,6 +238,4 @@ app.post('/api/webhook/bank', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`VietQR Backend đang chạy tại cổng ${PORT}`);
-});
+app.listen(PORT, () => console.log(`VietQR Backend đang chạy tại cổng ${PORT}`));

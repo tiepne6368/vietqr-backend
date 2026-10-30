@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VietQR Nhận Tiền Cá Nhân & Đối Soát Giao Dịch — Nguyen Minh Tiep (VietinBank)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+          colors: {
+            vietin: { 50: '#f0f7ff', 100: '#e0effe', 200: '#bae0fd', 500: '#0284c7', 600: '#005baa', 700: '#004887', 800: '#00396b', 900: '#002b52' },
+            emerald: { 50: '#ecfdf5', 100: '#d1fae5', 500: '#10b981', 600: '#059669', 700: '#047857' }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    .bank-card-gradient { background: linear-gradient(135deg, #005baa 0%, #0284c7 58%, #0d9488 100%); }
+    .qr-frame-shadow { box-shadow: 0 12px 32px -8px rgba(0,91,170,.14), 0 4px 12px -2px rgba(15,23,42,.06); }
+    @keyframes pulse-subtle { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+    .animate-pulse-subtle { animation: pulse-subtle 2.2s cubic-bezier(.4,0,.6,1) infinite; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col selection:bg-vietin-600 selection:text-white">
+
+  <!-- HEADER -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <button id="btnToggleSidebar" type="button" aria-label="Mở lịch sử" class="lg:hidden inline-flex items-center justify-center p-2 rounded-xl text-slate-600 hover:text-vietin-600 hover:bg-slate-100">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </button>
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bank-card-gradient flex items-center justify-center text-white font-extrabold text-lg shadow-sm">QR</div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-bold text-slate-900 text-sm sm:text-base tracking-tight">VietQR Cá Nhân & Đối Soát</h1>
+              <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-vietin-50 text-vietin-700 border border-vietin-200">NAPAS247 • ICB</span>
+            </div>
+            <p class="text-xs text-slate-500 hidden sm:block">Lưu trữ ảnh QR dài hạn • Đồng bộ 2 chiều chống mất dữ liệu</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button id="btnOpenApiConfig" type="button" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition bg-amber-50/90 border-amber-200 text-amber-800 hover:bg-amber-100" title="Cấu hình Backend API">
+          <span id="apiStatusDot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse-subtle"></span>
+          <span id="apiStatusText" class="truncate max-w-[140px] sm:max-w-none">API Xác minh: Đang kết nối...</span>
+        </button>
+        <button id="btnExportBackup" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition shadow-sm" title="Tải file sao lưu toàn bộ lịch sử và ảnh QR">
+          <span>⬇ Sao lưu</span>
+        </button>
+        <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer" title="Khôi phục từ file sao lưu">
+          <span>⬆ Khôi phục</span>
+          <input id="inputImportBackup" type="file" accept=".json" class="hidden" />
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <!-- BANNER -->
+  <div id="verificationBanner" class="bg-amber-50 border-b border-amber-200/80 px-4 py-2.5 text-xs text-amber-900">
+    <div class="max-w-[1440px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+      <p id="verificationBannerText"><strong>Đang kết nối Backend API...</strong> Lịch sử mã QR, ảnh QR và giao dịch API được lưu vĩnh viễn và tự động khôi phục khi máy chủ khởi động lại.</p>
+      <button id="btnBannerConfig" type="button" class="shrink-0 font-semibold text-vietin-700 hover:text-vietin-800 underline underline-offset-2">Cấu hình API →</button>
+    </div>
+  </div>
+
+  <div class="flex-1 max-w-[1440px] w-full mx-auto flex relative">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-900/40 z-30 hidden lg:hidden"></div>
+
+    <!-- SIDEBAR -->
+    <aside id="historySidebar" aria-label="Lịch sử mã QR và giao dịch" class="fixed lg:static inset-y-0 left-0 z-40 w-[350px] sm:w-[390px] bg-white border-r border-slate-200 flex flex-col transform -translate-x-full lg:translate-x-0 transition-transform duration-200 shrink-0">
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+        <div>
+          <h2 class="font-bold text-slate-900 text-sm">Lịch sử Mã QR & Giao dịch (Lưu dài hạn)</h2>
+          <p class="text-[11px] text-slate-500 mt-0.5">Lưu kèm ảnh QR gốc • Không tự xóa sau 24h</p>
+        </div>
+        <button id="btnCloseSidebar" type="button" class="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60" aria-label="Đóng">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-2.5 bg-slate-100/80 border-b border-slate-200">
+        <div class="grid grid-cols-2 gap-1.5 bg-slate-200/70 p-1 rounded-xl">
+          <button id="tabBtnQrHistory" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-white text-vietin-700 shadow-sm">
+            <span>Mã QR đã tạo</span><span id="badgeCountQr" class="px-1.5 rounded-full text-[10px] bg-vietin-50 text-vietin-700 font-mono">0</span>
+          </button>
+          <button id="tabBtnVerifiedTx" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 text-slate-600 hover:text-slate-900">
+            <span>Đã xác minh (API)</span><span id="badgeCountTx" class="px-1.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-mono">0</span>
+          </button>
+        </div>
+        <div id="qrFilterBar" class="flex items-center justify-between gap-1 mt-2 px-1">
+          <div class="flex items-center gap-1">
+            <button data-filter="ALL" class="qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-white">Tất cả</button>
+            <button data-filter="PENDING" class="qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 hover:bg-slate-200">Chờ TT</button>
+            <button data-filter="RECEIVED" class="qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 hover:bg-slate-200">Đã nhận</button>
+            <button data-filter="REVIEW" class="qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 hover:bg-slate-200">Cần KT</button>
+          </div>
+          <button id="btnClearHistory" type="button" class="text-[11px] text-slate-400 hover:text-rose-600 transition font-medium">Xóa lịch sử</button>
+        </div>
+      </div>
+
+      <div id="historyListContainer" class="flex-1 overflow-y-auto p-3 space-y-2.5"></div>
+
+      <div class="p-3 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500">
+        Ảnh QR và giao dịch đã xác minh được lưu bền vững vào IndexedDB & tự động đồng bộ 2 chiều với máy chủ.
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto min-w-0">
+      <div class="max-w-5xl mx-auto space-y-6">
+
+        <section aria-label="Tài khoản nhận tiền cố định" class="bank-card-gradient rounded-2xl p-5 sm:p-6 text-white shadow-md relative overflow-hidden">
+          <div class="-right-10 -top-10 w-44 h-44 rounded-full bg-white/10 pointer-events-none absolute"></div>
+          <div class="-left-10 -bottom-12 w-36 h-36 rounded-full bg-emerald-400/15 pointer-events-none absolute"></div>
+          <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="space-y-1.5">
+              <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-white/15 text-xs font-semibold tracking-wide uppercase">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>Tài khoản thụ hưởng cố định
+              </div>
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 class="text-xl sm:text-2xl font-extrabold tracking-wide">NGUYEN MINH TIEP</h2>
+                <span class="text-xs sm:text-sm font-medium text-sky-100 bg-black/20 px-2.5 py-0.5 rounded-lg">VietinBank • VietQR: ICB (BIN 970415)</span>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5">
+              <div>
+                <div class="text-[11px] text-sky-100 uppercase tracking-wider">Số tài khoản nhận tiền</div>
+                <div class="font-mono text-lg sm:text-xl font-bold tracking-wider">0913931376</div>
+              </div>
+              <button id="btnTopCopyAccount" type="button" class="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-vietin-700 hover:bg-sky-50 active:scale-95 transition text-xs font-bold">Sao chép STK</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+          <!-- LEFT: FORM -->
+          <section class="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 class="text-base sm:text-lg font-bold text-slate-900">Tạo Mã QR Chuyển Khoản</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Mã QR tự cập nhật khi nhập số tiền hoặc nội dung</p>
+              </div>
+              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">Chuẩn VietQR</span>
+            </div>
+
+            <form id="qrGeneratorForm" class="space-y-5" onsubmit="return false;">
+              <div>
+                <div class="flex items-center justify-between mb-1.5 gap-2">
+                  <label for="amountInput" class="block text-sm font-semibold text-slate-700">Số tiền muốn nhận (VND)</label>
+                  <span id="amountWordsHint" class="text-xs font-medium text-vietin-600 italic">Để trống nếu muốn người chuyển tự nhập</span>
+                </div>
+                <div class="relative">
+                  <input id="amountInput" type="text" inputmode="numeric" autocomplete="off" placeholder="Ví dụ: 500.000"
+                    class="w-full pl-4 pr-16 py-3.5 rounded-xl border border-slate-300 focus:border-vietin-600 font-mono text-lg sm:text-xl font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-normal transition outline-none" />
+                  <div class="inset-y-0 right-0 pr-4 flex items-center pointer-events-none absolute">
+                    <span class="text-sm font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">VND</span>
+                  </div>
+                </div>
+                <p id="amountErrorMsg" class="hidden mt-1.5 text-xs font-medium text-rose-600"></p>
+                <div class="mt-2.5">
+                  <div class="text-[11px] font-medium text-slate-400 mb-1.5">Chọn nhanh mệnh giá:</div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button type="button" data-amount="50000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">50.000 ₫</button>
+                    <button type="button" data-amount="100000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">100.000 ₫</button>
+                    <button type="button" data-amount="200000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">200.000 ₫</button>
+                    <button type="button" data-amount="500000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">500.000 ₫</button>
+                    <button type="button" data-amount="1000000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">1.000.000 ₫</button>
+                    <button type="button" data-amount="2000000" class="quick-amount-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 border border-slate-200/80 transition">2.000.000 ₫</button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-1.5">
+                  <label for="messageInput" class="block text-sm font-semibold text-slate-700">Nội dung chuyển khoản tùy chỉnh</label>
+                  <span id="charCountLabel" class="text-xs font-mono text-slate-400">0/50 ký tự</span>
+                </div>
+                <div class="relative">
+                  <input id="messageInput" type="text" maxlength="50" autocomplete="off" placeholder="Nhập nội dung (không dấu, chuẩn Napas247)..."
+                    class="w-full pl-4 pr-28 py-3 rounded-xl border border-slate-300 focus:border-vietin-600 text-sm sm:text-base font-medium text-slate-900 placeholder:text-slate-400 transition outline-none" />
+                  <button id="btnAppendRefCode" type="button" title="Chèn mã đối soát ngắn để Backend tự khớp lệnh"
+                    class="right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg bg-vietin-50 hover:bg-vietin-100 text-vietin-700 text-xs font-semibold transition border border-vietin-200 absolute">+ Mã đối soát</button>
+                </div>
+              </div>
+
+              <div class="pt-2 flex flex-wrap items-center gap-3">
+                <button id="btnSaveNewQr" type="button" class="flex-1 min-w-[200px] inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-vietin-600 hover:bg-vietin-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm transition">
+                  <span>+ Lưu vào Lịch sử (Kèm Ảnh QR)</span>
+                </button>
+                <button id="btnClearInputs" type="button" class="inline-flex items-center justify-center gap-1.5 px-4 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition">Xóa nội dung nhập</button>
+              </div>
+            </form>
+
+            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Chi tiết lệnh chuyển khoản hiện tại</span>
+                <span id="activeSessionIdBadge" class="font-mono text-[11px] text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">Phiên: Đang soạn</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div class="bg-white p-3 rounded-lg border border-slate-200/70">
+                  <div class="text-xs text-slate-400">Ngân hàng thụ hưởng</div>
+                  <div class="font-bold text-slate-900 mt-0.5">VietinBank (ICB - 970415)</div>
+                </div>
+                <div class="bg-white p-3 rounded-lg border border-slate-200/70">
+                  <div class="text-xs text-slate-400">Chủ tài khoản</div>
+                  <div class="font-bold text-slate-900 mt-0.5">Nguyen Minh Tiep</div>
+                </div>
+                <div class="bg-white p-3 rounded-lg border border-slate-200/70 flex items-center justify-between gap-2">
+                  <div>
+                    <div class="text-xs text-slate-400">Số tài khoản</div>
+                    <div class="font-mono font-bold text-vietin-700 text-base mt-0.5">0913931376</div>
+                  </div>
+                  <button id="btnCopyAccountDetail" type="button" class="px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:text-vietin-600 hover:bg-vietin-50 transition">Chép</button>
+                </div>
+                <div class="bg-white p-3 rounded-lg border border-slate-200/70">
+                  <div class="text-xs text-slate-400">Số tiền hiển thị trong QR</div>
+                  <div id="summaryAmountText" class="font-mono font-bold text-emerald-600 text-base mt-0.5 truncate">Tự chọn số tiền</div>
+                </div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-slate-200/70 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-xs text-slate-400">Nội dung chuyển khoản (Chuẩn hóa Napas)</div>
+                  <div id="summaryMessageText" class="font-mono font-semibold text-slate-800 text-sm mt-0.5 break-all">(Chưa nhập nội dung)</div>
+                </div>
+                <button id="btnCopyMessage" type="button" class="shrink-0 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-vietin-50 hover:text-vietin-700 text-slate-700 text-xs font-semibold transition">Sao chép ND</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- RIGHT: QR + STATUS -->
+          <section class="lg:col-span-5 space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200/90 qr-frame-shadow p-5 sm:p-6 flex flex-col items-center">
+              <div class="w-full flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                  <span class="px-2.5 py-1 rounded-md bg-vietin-600 text-white font-extrabold text-xs tracking-wider">VIETQR</span>
+                  <span class="text-xs font-bold text-slate-700">ICB • VietinBank</span>
+                </div>
+                <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+                  <button id="btnModeCanvas" type="button" class="px-2 py-1 rounded-md bg-white text-vietin-700 shadow-sm transition">EMVCo Chuẩn</button>
+                  <button id="btnModeVietQrApi" type="button" class="px-2 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">VietQR Link</button>
+                </div>
+              </div>
+
+              <div class="relative bg-white p-3 rounded-2xl border-2 border-vietin-100 flex flex-col items-center justify-center">
+                <canvas id="vietqrCanvas" width="600" height="720" class="w-[270px] sm:w-[295px] h-auto rounded-xl block"></canvas>
+                <img id="vietqrApiImage" alt="Mã VietQR Nguyen Minh Tiep" class="w-[270px] sm:w-[295px] h-auto rounded-xl hidden object-contain" />
+              </div>
+
+              <div class="w-full mt-3">
+                <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                  <span>Chuỗi dữ liệu EMVCo NAPAS247 (CRC16):</span>
+                  <button id="btnCopyEmvPayload" type="button" class="text-vietin-600 hover:underline font-medium">Sao chép chuỗi QR</button>
+                </div>
+                <div id="emvPayloadDisplay" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-slate-500 truncate select-all"></div>
+              </div>
+
+              <div class="w-full grid grid-cols-2 gap-2.5 mt-4">
+                <button id="btnDownloadQrPng" type="button" class="col-span-2 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm transition">⬇ Tải mã QR (PNG chất lượng cao)</button>
+                <button id="btnCardCopyAccount" type="button" class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition">Sao chép STK</button>
+                <button id="btnCardCopyContent" type="button" class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition">Sao chép nội dung</button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 space-y-4">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Trạng thái nhận tiền thực tế</span>
+                <button id="btnCheckStatusNow" type="button" class="inline-flex items-center gap-1 text-xs font-semibold text-vietin-600 hover:text-vietin-800 transition">
+                  <svg id="iconRefreshStatus" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <span>Đồng bộ API</span>
+                </button>
+              </div>
+
+              <div id="realStatusBox" class="p-4 rounded-xl border bg-amber-50/70 border-amber-200 flex items-start gap-3.5">
+                <div id="realStatusIconWrap" class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span id="realStatusBadgeText" class="font-bold text-sm text-amber-900">Chờ thanh toán</span>
+                    <span id="realStatusSubPill" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-200/70 text-amber-900">Đang kết nối API</span>
+                  </div>
+                  <p id="realStatusDescription" class="text-xs text-amber-800/90 mt-1 leading-relaxed"></p>
+                  <div id="verifiedMetadataBox" class="hidden mt-3 pt-2.5 border-t border-slate-200/60 text-xs space-y-1 font-mono">
+                    <div>Mã GD Ngân hàng: <strong id="metaBankTxId">—</strong></div>
+                    <div>Số tiền thực nhận: <strong id="metaActualAmount">—</strong></div>
+                    <div>Thời gian nhận: <strong id="metaPaidAt">—</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL: HISTORY DETAIL (CÓ HIỂN THỊ ẢNH QR ĐÃ LƯU) -->
+  <div id="detailModal" class="fixed inset-0 z-50 bg-slate-900/50 hidden items-center justify-center p-4" role="dialog" aria-modal="true">
+    <div class="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col border border-slate-200 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-slate-900 text-base">Chi tiết Mã QR Đã Lưu & Trạng thái</h3>
+          <p id="modalOrderId" class="font-mono text-xs text-slate-500 mt-0.5"></p>
+        </div>
+        <button id="btnCloseDetailModal" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4 text-sm overflow-y-auto">
+        <!-- Ảnh QR đã lưu dài hạn -->
+        <div class="flex flex-col items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <img id="modalSavedQrImg" alt="Ảnh mã QR đã lưu" class="w-48 h-auto rounded-lg shadow-sm border border-white" />
+          <button id="btnDownloadModalQr" type="button" class="mt-2.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition">
+            ⬇ Tải ảnh QR này về máy
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+          <div>
+            <div class="text-xs text-slate-500">Số tiền yêu cầu</div>
+            <div id="modalAmount" class="font-mono text-xl font-extrabold text-vietin-700 mt-0.5"></div>
+          </div>
+          <div id="modalStatusBadge"></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="p-3 rounded-lg border border-slate-200"><div class="text-slate-400">Thời gian tạo QR</div><div id="modalCreatedAt" class="font-mono font-semibold text-slate-800 mt-0.5"></div></div>
+          <div class="p-3 rounded-lg border border-slate-200"><div class="text-slate-400">Thời gian nhận tiền</div><div id="modalPaidAt" class="font-mono font-semibold text-slate-800 mt-0.5">Chưa ghi nhận</div></div>
+        </div>
+        <div class="p-3 rounded-lg border border-slate-200 text-xs">
+          <div class="text-slate-400">Nội dung chuyển khoản</div>
+          <div id="modalContent" class="font-mono font-bold text-slate-900 text-sm mt-0.5 break-all"></div>
+        </div>
+        <div class="p-3 rounded-lg border border-slate-200 text-xs bg-slate-50">
+          <div class="text-slate-400">Mã giao dịch ngân hàng (Từ API đối soát)</div>
+          <div id="modalBankTxId" class="font-mono font-semibold text-slate-700 mt-0.5">Chưa có dữ liệu xác minh</div>
+        </div>
+      </div>
+      <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+        <button id="btnDeleteHistoryItem" type="button" class="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 transition">Xóa mục này</button>
+        <button id="btnLoadItemToMain" type="button" class="px-4 py-2 rounded-xl bg-vietin-600 hover:bg-vietin-700 text-white text-xs font-semibold transition">Hiển thị lại ra màn hình chính</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: BACKEND CONFIG -->
+  <div id="backendModal" class="fixed inset-0 z-50 bg-slate-900/60 hidden items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true">
+    <div class="bg-white rounded-2xl max-w-xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h3 class="font-bold text-base">Cấu hình Máy chủ Backend</h3>
+        <button id="btnCloseBackendModal" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-white">✕</button>
+      </div>
+      <div class="p-6 space-y-4 text-sm">
+        <label for="inputBackendUrl" class="block text-sm font-bold text-slate-800">Địa chỉ máy chủ Backend (Base URL)</label>
+        <div class="flex flex-col sm:flex-row gap-2.5">
+          <input id="inputBackendUrl" type="url" class="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 font-mono text-sm outline-none" />
+          <button id="btnSaveAndTestApi" type="button" class="px-5 py-2.5 rounded-xl bg-vietin-600 hover:bg-vietin-700 text-white font-semibold text-xs transition">Lưu & Kết nối</button>
+        </div>
+        <p id="apiTestResultMsg" class="text-xs font-mono text-slate-500"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const ACCOUNT_CONFIG = Object.freeze({
+        recipientName: 'Nguyen Minh Tiep',
+        accountNumber: '0913931376',
+        bankName: 'VietinBank',
+        vietQrCode: 'ICB',
+        bankBin: '970415',
+        maxNapasAmount: 499999999
+      });
+
+      const DEFAULT_BACKEND_URL = 'https://vietqr-backend-tiep.onrender.com';
+
+      const STORAGE_KEYS = {
+        QR_HISTORY: 'vietqr_personal_qr_history_v2',
+        VERIFIED_TX: 'vietqr_personal_verified_tx_v2',
+        BACKEND_URL: 'vietqr_personal_backend_url_v1'
+      };
+
+      const state = {
+        amount: 0,
+        rawMessage: '',
+        qrDisplayMode: 'CANVAS',
+        activeOrderId: null,
+        activeTab: 'QR_HISTORY',
+        statusFilter: 'ALL',
+        qrHistory: [],
+        verifiedTransactions: [],
+        backendUrl: DEFAULT_BACKEND_URL,
+        backendConnected: false,
+        backendChecked: false,
+        inspectingItemId: null
+      };
+
+      // ===== CƠ SỞ DỮ LIỆU INDEXEDDB LƯU ẢNH QR DÀI HẠN KHÔNG GIỚI HẠN =====
+      const idbStore = {
+        db: null,
+        init() {
+          return new Promise(resolve => {
+            if (!window.indexedDB) return resolve();
+            const req = indexedDB.open('VietQRLongTermDB', 1);
+            req.onupgradeneeded = e => {
+              const db = e.target.result;
+              if (!db.objectStoreNames.contains('qr_images')) {
+                db.createObjectStore('qr_images', { keyPath: 'id' });
+              }
+            };
+            req.onsuccess = e => { this.db = e.target.result; resolve(); };
+            req.onerror = () => resolve();
+          });
+        },
+        saveImage(id, dataUrl) {
+          if (!this.db || !id || !dataUrl) return;
+          try {
+            const tx = this.db.transaction('qr_images', 'readwrite');
+            tx.objectStore('qr_images').put({ id, dataUrl });
+          } catch (e) {}
+        },
+        getAllImages() {
+          return new Promise(resolve => {
+            if (!this.db) return resolve({});
+            try {
+              const tx = this.db.transaction('qr_images', 'readonly');
+              const req = tx.objectStore('qr_images').getAll();
+              req.onsuccess = () => {
+                const map = {};
+                (req.result || []).forEach(r => { map[r.id] = r.dataUrl; });
+                resolve(map);
+              };
+              req.onerror = () => resolve({});
+            } catch (e) { resolve({}); }
+          });
+        },
+        clearAll() {
+          if (!this.db) return;
+          try {
+            const tx = this.db.transaction('qr_images', 'readwrite');
+            tx.objectStore('qr_images').clear();
+          } catch (e) {}
+        }
+      };
+
+      // Yêu cầu trình duyệt (đặc biệt Safari iPhone/Chrome) khóa bộ nhớ không tự động xóa
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().catch(() => {});
+      }
+
+      // ===== EMVCo + CRC16 =====
+      function formatTlv(id, value) {
+        const s = String(value);
+        return id + String(s.length).padStart(2, '0') + s;
+      }
+
+      function computeCrc16Ccitt(str) {
+        let crc = 0xFFFF;
+        for (let i = 0; i < str.length; i++) {
+          crc ^= (str.charCodeAt(i) & 0xFF) << 8;
+          for (let j = 0; j < 8; j++) {
+            crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
+          }
+        }
+        return crc.toString(16).toUpperCase().padStart(4, '0');
+      }
+
+      function buildVietQrEmvPayload(amountNumber, messageStr) {
+        const hasAmount = Number.isInteger(amountNumber) && amountNumber > 0;
+        const acquirerAndAccount = formatTlv('00', ACCOUNT_CONFIG.bankBin) + formatTlv('01', ACCOUNT_CONFIG.accountNumber);
+        const napasMerchantInfo = formatTlv('00', 'A000000727') + formatTlv('01', acquirerAndAccount) + formatTlv('02', 'QRIBFTTA');
+
+        let payload = formatTlv('00', '01') + formatTlv('01', hasAmount ? '12' : '11') + formatTlv('38', napasMerchantInfo) + formatTlv('53', '704');
+        if (hasAmount) payload += formatTlv('54', String(amountNumber));
+        payload += formatTlv('58', 'VN');
+
+        const cleanMsg = sanitizeNapasMessage(messageStr);
+        if (cleanMsg.length > 0) payload += formatTlv('62', formatTlv('08', cleanMsg));
+
+        const withHeader = payload + '6304';
+        return withHeader + computeCrc16Ccitt(withHeader);
+      }
+
+      function sanitizeNapasMessage(input) {
+        if (!input) return '';
+        return String(input)
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+          .replace(/[^a-zA-Z0-9\s\-_]/g, '')
+          .replace(/\s+/g, ' ')
+          .slice(0, 50);
+      }
+      function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+      function formatVndDots(n) { return (!n || n <= 0) ? '' : Number(n).toLocaleString('vi-VN'); }
+      function formatVndCurrency(n) { return (!n || n <= 0) ? '0 ₫' : Number(n).toLocaleString('vi-VN') + ' ₫'; }
+      function formatDateTimeVi(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return String(iso);
+        const p = v => String(v).padStart(2, '0');
+        return `${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+      }
+      function apiBase() { return state.backendUrl.replace(/\/+$/, ''); }
+
+      // ===== VẼ QR CANVAS (HỖ TRỢ VẼ LẠI ẢNH CHO LỊCH SỬ) =====
+      function drawQrToCanvasElement(canvas, amountVal, messageStr) {
+        if (!canvas) return '';
+        const cleanMsg = sanitizeNapasMessage(messageStr).trim();
+        const emvPayload = buildVietQrEmvPayload(amountVal, cleanMsg);
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, W, H);
+
+        const grad = ctx.createLinearGradient(0, 0, W, 0);
+        grad.addColorStop(0, '#005baa');
+        grad.addColorStop(1, '#0284c7');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, 86);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 24px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('VIETQR • ICB (VIETINBANK)', W / 2, 42);
+        ctx.font = '500 16px Inter, sans-serif';
+        ctx.fillStyle = '#e0effe';
+        ctx.fillText('Quét mã bằng ứng dụng Ngân hàng / Ví điện tử', W / 2, 68);
+
+        const qr = qrcode(0, 'M');
+        qr.addData(emvPayload);
+        qr.make();
+
+        const n = qr.getModuleCount();
+        const boxSize = 390;
+        const cell = boxSize / n;
+        const startX = (W - boxSize) / 2;
+        const startY = 115;
+
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX - 16, startY - 16, boxSize + 32, boxSize + 32);
+
+        ctx.fillStyle = '#0f172a';
+        for (let r = 0; r < n; r++) {
+          for (let c = 0; c < n; c++) {
+            if (qr.isDark(r, c)) {
+              ctx.fillRect(Math.floor(startX + c * cell), Math.floor(startY + r * cell), Math.ceil(cell), Math.ceil(cell));
+            }
+          }
+        }
+
+        const logo = 64;
+        const lx = W / 2 - logo / 2;
+        const ly = startY + boxSize / 2 - logo / 2;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(lx - 5, ly - 5, logo + 10, logo + 10);
+        ctx.fillStyle = '#005baa';
+        ctx.fillRect(lx, ly, logo, logo);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px Inter, sans-serif';
+        ctx.fillText('ICB', W / 2, ly + 39);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 24px Inter, sans-serif';
+        ctx.fillText(ACCOUNT_CONFIG.recipientName.toUpperCase(), W / 2, 558);
+
+        ctx.fillStyle = '#005baa';
+        ctx.font = 'bold 26px "JetBrains Mono", monospace';
+        ctx.fillText('STK: ' + ACCOUNT_CONFIG.accountNumber, W / 2, 594);
+
+        ctx.fillStyle = amountVal > 0 ? '#059669' : '#475569';
+        ctx.font = 'bold 21px Inter, sans-serif';
+        ctx.fillText(amountVal > 0 ? 'Số tiền: ' + formatVndCurrency(amountVal) : 'Số tiền: Người chuyển tự nhập', W / 2, 634);
+
+        if (cleanMsg) {
+          ctx.fillStyle = '#334155';
+          ctx.font = '500 17px "JetBrains Mono", monospace';
+          ctx.fillText('ND: ' + (cleanMsg.length > 38 ? cleanMsg.slice(0, 38) + '...' : cleanMsg), W / 2, 668);
+        } else {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = 'italic 16px Inter, sans-serif';
+          ctx.fillText('Chuẩn EMVCo NAPAS 247 • VietinBank', W / 2, 668);
+        }
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '500 13px Inter, sans-serif';
+        ctx.fillText('Mã QR chỉ chứa thông tin chuyển khoản hợp lệ', W / 2, 700);
+        return emvPayload;
+      }
+
+      function generateQrDataUrl(amountVal, messageStr) {
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = 600;
+        offCanvas.height = 720;
+        drawQrToCanvasElement(offCanvas, amountVal, messageStr);
+        return offCanvas.toDataURL('image/png');
+      }
+
+      function updateQrAndSummary() {
+        const cleanMsg = sanitizeNapasMessage(state.rawMessage).trim();
+        const canvas = document.getElementById('vietqrCanvas');
+        const emvPayload = drawQrToCanvasElement(canvas, state.amount, cleanMsg);
+
+        document.getElementById('emvPayloadDisplay').textContent = emvPayload;
+
+        const imgEl = document.getElementById('vietqrApiImage');
+        const params = new URLSearchParams();
+        if (state.amount > 0) params.set('amount', String(state.amount));
+        if (cleanMsg) params.set('addInfo', cleanMsg);
+        params.set('accountName', ACCOUNT_CONFIG.recipientName);
+        imgEl.onerror = function () { setQrDisplayMode('CANVAS'); };
+        imgEl.src = `https://img.vietqr.io/image/${ACCOUNT_CONFIG.bankBin}-${ACCOUNT_CONFIG.accountNumber}-compact2.png?${params.toString()}`;
+
+        const sumAmt = document.getElementById('summaryAmountText');
+        const hint = document.getElementById('amountWordsHint');
+        if (state.amount > 0) {
+          sumAmt.textContent = formatVndCurrency(state.amount);
+          hint.textContent = 'Định dạng chuẩn: ' + formatVndCurrency(state.amount);
+        } else {
+          sumAmt.textContent = 'Người chuyển tự nhập';
+          hint.textContent = 'Để trống nếu muốn người chuyển tự nhập';
+        }
+        document.getElementById('summaryMessageText').textContent = cleanMsg || '(Không có nội dung kèm theo)';
+        document.getElementById('charCountLabel').textContent = cleanMsg.length + '/50 ký tự';
+      }
+
+      function setQrDisplayMode(mode) {
+        state.qrDisplayMode = mode;
+        const canvasEl = document.getElementById('vietqrCanvas');
+        const imgEl = document.getElementById('vietqrApiImage');
+        const btnC = document.getElementById('btnModeCanvas');
+        const btnA = document.getElementById('btnModeVietQrApi');
+        const on = 'px-2 py-1 rounded-md bg-white text-vietin-700 shadow-sm transition';
+        const off = 'px-2 py-1 rounded-md text-slate-600 hover:text-slate-900 transition';
+        if (mode === 'CANVAS') {
+          canvasEl.classList.remove('hidden'); imgEl.classList.add('hidden');
+          btnC.className = on; btnA.className = off;
+        } else {
+          canvasEl.classList.add('hidden'); imgEl.classList.remove('hidden');
+          btnA.className = on; btnC.className = off;
+        }
+      }
+
+      // ===== HIỂN THỊ TRẠNG THÁI =====
+      const ICON_CLOCK = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+      const ICON_CHECK = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>';
+      const ICON_WARN = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>';
+
+      function renderActiveVerificationStatus() {
+        const activeItem = state.qrHistory.find(i => i.id === state.activeOrderId) || null;
+        const status = activeItem ? activeItem.status : 'PENDING';
+
+        const box = document.getElementById('realStatusBox');
+        const iconWrap = document.getElementById('realStatusIconWrap');
+        const badgeText = document.getElementById('realStatusBadgeText');
+        const subPill = document.getElementById('realStatusSubPill');
+        const desc = document.getElementById('realStatusDescription');
+        const metaBox = document.getElementById('verifiedMetadataBox');
+
+        document.getElementById('activeSessionIdBadge').textContent = activeItem ? 'Mã phiên: ' + activeItem.id : 'Phiên: Đang soạn trực tiếp';
+
+        if (status === 'RECEIVED') {
+          box.className = 'p-4 rounded-xl border bg-emerald-50/90 border-emerald-300 flex items-start gap-3.5';
+          iconWrap.className = 'w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5';
+          iconWrap.innerHTML = ICON_CHECK;
+          badgeText.className = 'font-bold text-sm text-emerald-950';
+          badgeText.textContent = 'Đã nhận';
+          subPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-200 text-emerald-900';
+          subPill.textContent = 'Đã xác minh qua API';
+          desc.className = 'text-xs text-emerald-900 mt-1 leading-relaxed';
+          desc.textContent = 'Giao dịch đã được xác thực khớp tài khoản, số tiền và nội dung đối soát.';
+          metaBox.classList.remove('hidden');
+          document.getElementById('metaBankTxId').textContent = activeItem.bankTxId || '—';
+          document.getElementById('metaActualAmount').textContent = formatVndCurrency(activeItem.actualAmount || activeItem.amount);
+          document.getElementById('metaPaidAt').textContent = formatDateTimeVi(activeItem.paidAt);
+        } else if (status === 'REVIEW') {
+          box.className = 'p-4 rounded-xl border bg-rose-50/90 border-rose-300 flex items-start gap-3.5';
+          iconWrap.className = 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5';
+          iconWrap.innerHTML = ICON_WARN;
+          badgeText.className = 'font-bold text-sm text-rose-950';
+          badgeText.textContent = 'Cần kiểm tra';
+          subPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-200 text-rose-900';
+          subPill.textContent = 'Lệch số tiền / nội dung';
+          desc.className = 'text-xs text-rose-900 mt-1 leading-relaxed';
+          desc.textContent = 'Số tiền thực nhận không khớp số tiền yêu cầu. Vui lòng kiểm tra đối chiếu.';
+          metaBox.classList.remove('hidden');
+          document.getElementById('metaBankTxId').textContent = activeItem.bankTxId || '—';
+          document.getElementById('metaActualAmount').textContent = formatVndCurrency(activeItem.actualAmount || 0);
+          document.getElementById('metaPaidAt').textContent = formatDateTimeVi(activeItem.paidAt);
+        } else {
+          box.className = 'p-4 rounded-xl border bg-amber-50/70 border-amber-200 flex items-start gap-3.5';
+          iconWrap.className = 'w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5';
+          iconWrap.innerHTML = ICON_CLOCK;
+          badgeText.className = 'font-bold text-sm text-amber-900';
+          badgeText.textContent = 'Chờ thanh toán';
+          subPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-200/70 text-amber-900';
+          subPill.textContent = state.backendConnected ? 'Đang lắng nghe API' : 'Đang kết nối API...';
+          desc.className = 'text-xs text-amber-800/90 mt-1 leading-relaxed';
+          desc.innerHTML = 'Đang chờ thông báo biến động số dư thực tế từ Backend.';
+          metaBox.classList.add('hidden');
+        }
+      }
+
+      // ===== LƯU TRỮ BỀN VỮNG (CẢ QR HISTORY + VERIFIED TX + ẢNH QR) =====
+      async function loadHistoryFromStorage() {
+        await idbStore.init();
+        const savedImages = await idbStore.getAllImages();
+
+        try {
+          const rawQr = localStorage.getItem(STORAGE_KEYS.QR_HISTORY) || localStorage.getItem('vietqr_personal_qr_history_v1');
+          if (rawQr) {
+            const parsed = JSON.parse(rawQr);
+            if (Array.isArray(parsed)) {
+              state.qrHistory = parsed.filter(x => x && typeof x === 'object' && x.id).map(item => {
+                const img = savedImages[item.id] || item.qrImage || generateQrDataUrl(item.amount, item.content);
+                idbStore.saveImage(item.id, img);
+                return { ...item, qrImage: img };
+              });
+            }
+          }
+        } catch (err) { console.error('Lỗi đọc lịch sử QR:', err); }
+
+        try {
+          const rawTx = localStorage.getItem(STORAGE_KEYS.VERIFIED_TX);
+          if (rawTx) {
+            const parsedTx = JSON.parse(rawTx);
+            if (Array.isArray(parsedTx)) state.verifiedTransactions = parsedTx;
+          }
+        } catch (err) { console.error('Lỗi đọc lịch sử GD:', err); }
+
+        try {
+          const savedUrl = localStorage.getItem(STORAGE_KEYS.BACKEND_URL);
+          state.backendUrl = (savedUrl && savedUrl.trim()) || DEFAULT_BACKEND_URL;
+        } catch (err) { state.backendUrl = DEFAULT_BACKEND_URL; }
+        document.getElementById('inputBackendUrl').value = state.backendUrl;
+      }
+
+      function saveHistoryToStorage() {
+        try {
+          // Lưu ảnh vào IndexedDB để không bị tràn bộ nhớ localStorage
+          state.qrHistory.forEach(item => {
+            if (item.id && item.qrImage) idbStore.saveImage(item.id, item.qrImage);
+          });
+          const slimOrders = state.qrHistory.map(({ qrImage, ...rest }) => rest);
+          localStorage.setItem(STORAGE_KEYS.QR_HISTORY, JSON.stringify(slimOrders));
+          localStorage.setItem(STORAGE_KEYS.VERIFIED_TX, JSON.stringify(state.verifiedTransactions));
+        } catch (err) { console.error('Lỗi lưu lịch sử:', err); }
+      }
+
+      function getStatusLabelAndStyle(status) {
+        if (status === 'RECEIVED') return { label: 'Đã nhận', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+        if (status === 'REVIEW') return { label: 'Cần kiểm tra', badgeClass: 'bg-rose-100 text-rose-800 border-rose-200' };
+        return { label: 'Chờ thanh toán', badgeClass: 'bg-amber-100 text-amber-800 border-amber-200' };
+      }
+
+      function renderSidebarHistory() {
+        const container = document.getElementById('historyListContainer');
+        const filterBar = document.getElementById('qrFilterBar');
+        document.getElementById('badgeCountQr').textContent = String(state.qrHistory.length);
+        document.getElementById('badgeCountTx').textContent = String(state.verifiedTransactions.length);
+        container.innerHTML = '';
+
+        if (state.activeTab === 'QR_HISTORY') {
+          filterBar.classList.remove('hidden');
+          const filtered = [...state.qrHistory]
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .filter(i => state.statusFilter === 'ALL' || i.status === state.statusFilter);
+
+          if (filtered.length === 0) {
+            container.innerHTML = `<div class="py-12 px-4 text-center space-y-2">
+              <div class="text-xs font-semibold text-slate-600">Chưa có mục lịch sử mã QR nào</div>
+              <p class="text-[11px] text-slate-400">Nhấn <strong>"+ Lưu vào Lịch sử (Kèm Ảnh QR)"</strong> để lưu dài hạn.</p></div>`;
+            return;
+          }
+
+          filtered.forEach(item => {
+            const st = getStatusLabelAndStyle(item.status);
+            const amt = item.amount > 0 ? formatVndCurrency(item.amount) : 'Tự nhập tiền';
+            const selected = item.id === state.activeOrderId;
+            const thumbSrc = item.qrImage || generateQrDataUrl(item.amount, item.content);
+
+            const card = document.createElement('div');
+            card.className = 'p-3 rounded-xl border transition cursor-pointer flex gap-3 items-center ' + (selected ? 'bg-vietin-50/70 border-vietin-500' : 'bg-white hover:bg-slate-50 border-slate-200/90');
+            card.innerHTML = `
+              <img src="${thumbSrc}" alt="QR" class="w-12 h-14 object-contain rounded border border-slate-200 bg-white shrink-0" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-1.5">
+                  <div class="font-mono text-xs font-bold text-slate-900 truncate">${amt}</div>
+                  <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.badgeClass}">${st.label}</span>
+                </div>
+                <div class="mt-1 text-xs text-slate-600 font-mono truncate">ND: <strong class="text-slate-800">${escapeHtml(item.content) || '(Trống)'}</strong></div>
+                <div class="mt-1 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span>${formatDateTimeVi(item.createdAt)}</span>
+                  <span>${item.bankTxId ? 'GD: ' + escapeHtml(item.bankTxId) : item.id}</span>
+                </div>
+              </div>`;
+            card.addEventListener('click', () => openHistoryDetailModal(item.id));
+            container.appendChild(card);
+          });
+        } else {
+          filterBar.classList.add('hidden');
+          if (state.verifiedTransactions.length === 0) {
+            container.innerHTML = `<div class="py-12 px-4 text-center space-y-2.5">
+              <div class="text-xs font-bold text-slate-700">Chưa có giao dịch xác minh từ API</div></div>`;
+            return;
+          }
+          const sortedTx = [...state.verifiedTransactions].sort((a, b) => new Date(b.transaction_time) - new Date(a.transaction_time));
+          sortedTx.forEach(tx => {
+            const st = getStatusLabelAndStyle(tx.reconcile_status || 'RECEIVED');
+            const el = document.createElement('div');
+            el.className = 'p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-1.5';
+            el.innerHTML = `
+              <div class="flex items-center justify-between gap-2">
+                <div class="font-mono text-xs font-bold text-emerald-950">${formatVndCurrency(tx.amount)} — ${formatDateTimeVi(tx.transaction_time)}</div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${st.badgeClass}">${st.label}</span>
+              </div>
+              <div class="text-xs font-mono text-slate-700 break-all">ND: <strong>${escapeHtml(tx.content) || '—'}</strong></div>
+              <div class="text-[10px] font-mono text-slate-500 flex justify-between pt-1 border-t border-emerald-200/60">
+                <span>Mã GD NH: <strong>${escapeHtml(tx.bank_tx_id)}</strong></span>
+                <span>STK: ${escapeHtml(tx.account_number)}</span>
+              </div>`;
+            container.appendChild(el);
+          });
+        }
+      }
+
+      // ===== TẠO PHIÊN QR & LƯU KÈM ẢNH GỐC =====
+      function createAndSaveQrSession() {
+        const cleanMsg = sanitizeNapasMessage(state.rawMessage).trim();
+        const orderId = 'QR' + Date.now().toString().slice(-6);
+        const canvas = document.getElementById('vietqrCanvas');
+        const qrImage = canvas ? canvas.toDataURL('image/png') : generateQrDataUrl(state.amount, cleanMsg);
+
+        const newOrder = {
+          id: orderId,
+          amount: state.amount,
+          content: cleanMsg,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          paidAt: null,
+          bankTxId: null,
+          actualAmount: null,
+          qrImage: qrImage
+        };
+
+        state.qrHistory.unshift(newOrder);
+        state.activeOrderId = orderId;
+        saveHistoryToStorage();
+        renderSidebarHistory();
+        renderActiveVerificationStatus();
+        if (state.backendUrl) registerOrderWithBackend(newOrder);
+        showToast(`Đã lưu mã QR (${orderId}) kèm ảnh PNG dài hạn!`, 'success');
+      }
+
+      async function registerOrderWithBackend(order) {
+        if (!state.backendUrl) return;
+        try {
+          await fetch(apiBase() + '/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: order.id,
+              amount: order.amount,
+              content: order.content,
+              createdAt: order.createdAt,
+              qrImage: order.qrImage || null
+            })
+          });
+        } catch (err) {}
+      }
+
+      // ===== ĐỒNG BỘ 2 CHIỀU CHỐNG MẤT DỮ LIỆU KHI RENDER RESET =====
+      let isPolling = false;
+      async function pollBackendVerificationStatus(showFeedback = false) {
+        const icon = document.getElementById('iconRefreshStatus');
+        if (!state.backendUrl || isPolling) return;
+        isPolling = true;
+        if (icon) icon.classList.add('animate-spin');
+
+        try {
+          // Gửi dữ liệu đang có ở máy lên /api/sync để nếu Render vừa reset thì tự khôi phục lại
+          let res = await fetch(apiBase() + '/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orders: state.qrHistory.map(({ qrImage, ...rest }) => rest),
+              transactions: state.verifiedTransactions
+            })
+          });
+
+          // Tương thích ngược nếu server.js cũ chưa có /api/sync
+          if (res.status === 404) {
+            res = await fetch(apiBase() + '/api/status', { method: 'GET', cache: 'no-store' });
+          }
+
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (!data || !data.ok) throw new Error('Phản hồi API không hợp lệ');
+
+          state.backendConnected = true;
+          state.backendChecked = true;
+
+          // GỘP (MERGE) GIAO DỊCH ĐÃ XÁC MINH — TUYỆT ĐỐI KHÔNG GHI ĐÈ MẢNG RỖNG LÀM MẤT LỊCH SỬ
+          if (Array.isArray(data.transactions)) {
+            const txMap = new Map();
+            state.verifiedTransactions.forEach(t => { if (t && t.bank_tx_id) txMap.set(String(t.bank_tx_id), t); });
+            data.transactions.forEach(t => { if (t && t.bank_tx_id) txMap.set(String(t.bank_tx_id), t); });
+            state.verifiedTransactions = Array.from(txMap.values()).sort((a, b) => new Date(b.transaction_time) - new Date(a.transaction_time));
+          }
+
+          // GỘP (MERGE) LỊCH SỬ MÃ QR TỪ SERVER VÀ MÁY
+          if (Array.isArray(data.orders)) {
+            const localMap = new Map(state.qrHistory.map(o => [String(o.id), o]));
+
+            data.orders.forEach(srv => {
+              const id = String(srv.order_id);
+              const existing = localMap.get(id);
+              if (existing) {
+                if ((srv.status === 'RECEIVED' || srv.status === 'REVIEW') && existing.status !== srv.status) {
+                  existing.status = srv.status;
+                  existing.paidAt = srv.paid_at || new Date().toISOString();
+                  existing.bankTxId = srv.bank_tx_id || null;
+                  existing.actualAmount = srv.actual_amount || existing.amount;
+                  showToast(
+                    srv.status === 'RECEIVED'
+                      ? `Đã nhận ${formatVndCurrency(existing.actualAmount)} (Mã GD: ${existing.bankTxId})`
+                      : `Cảnh báo: Giao dịch ${existing.id} lệch số tiền!`,
+                    srv.status === 'RECEIVED' ? 'success' : 'warning'
+                  );
+                }
+              } else {
+                const amt = Number(srv.expected_amount || 0);
+                const msg = srv.expected_content || '';
+                const img = srv.qr_image || generateQrDataUrl(amt, msg);
+                idbStore.saveImage(id, img);
+                state.qrHistory.push({
+                  id: id,
+                  amount: amt,
+                  content: msg,
+                  status: srv.status || 'PENDING',
+                  createdAt: srv.created_at || new Date().toISOString(),
+                  paidAt: srv.paid_at || null,
+                  bankTxId: srv.bank_tx_id || null,
+                  actualAmount: srv.actual_amount || null,
+                  qrImage: img
+                });
+              }
+            });
+          }
+
+          saveHistoryToStorage();
+          updateConnectionUiBadge();
+          renderSidebarHistory();
+          renderActiveVerificationStatus();
+          if (showFeedback) showToast('Đã đồng bộ và sao lưu 2 chiều thành công!', 'success');
+        } catch (err) {
+          state.backendConnected = false;
+          state.backendChecked = true;
+          updateConnectionUiBadge();
+          renderActiveVerificationStatus();
+          if (showFeedback) showToast(`Không thể kết nối Backend (${err.message})`, 'error');
+        } finally {
+          isPolling = false;
+          if (icon) icon.classList.remove('animate-spin');
+        }
+      }
+
+      function updateConnectionUiBadge() {
+        const btn = document.getElementById('btnOpenApiConfig');
+        const dot = document.getElementById('apiStatusDot');
+        const txt = document.getElementById('apiStatusText');
+        const banner = document.getElementById('verificationBanner');
+        const bannerTxt = document.getElementById('verificationBannerText');
+
+        if (state.backendConnected) {
+          btn.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100';
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+          txt.textContent = 'API Xác minh: Đã kết nối';
+          banner.className = 'bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs text-emerald-950';
+          bannerTxt.innerHTML = `<strong>Đã kết nối & Đồng bộ 2 chiều (${escapeHtml(state.backendUrl)}):</strong> Lịch sử mã QR, ảnh PNG và giao dịch xác minh được bảo vệ dài hạn.`;
+        } else {
+          btn.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition bg-amber-50/90 border-amber-200 text-amber-800 hover:bg-amber-100';
+          dot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse-subtle';
+          txt.textContent = 'API: Đang đánh thức server...';
+        }
+      }
+
+      function copyTextToClipboard(text, label) {
+        if (!text) { showToast(`Không có ${label} để sao chép`, 'warning'); return; }
+        navigator.clipboard?.writeText(text).then(
+          () => showToast(`Đã sao chép ${label}`, 'success'),
+          () => showToast(`Đã sao chép ${label}`, 'success')
+        );
+      }
+
+      function downloadDataUrlAsPng(dataUrl, filename) {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const colors = {
+          success: 'bg-slate-900 text-white border-emerald-500',
+          warning: 'bg-amber-900 text-white border-amber-400',
+          error: 'bg-rose-900 text-white border-rose-400',
+          info: 'bg-slate-800 text-white border-sky-400'
+        };
+        const toast = document.createElement('div');
+        toast.className = `pointer-events-auto px-4 py-3 rounded-xl shadow-lg border-l-4 text-xs font-medium transition-all duration-200 ${colors[type] || colors.info}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 220); }, 3200);
+      }
+
+      function openHistoryDetailModal(itemId) {
+        const item = state.qrHistory.find(x => x.id === itemId);
+        if (!item) return;
+        state.inspectingItemId = item.id;
+        const st = getStatusLabelAndStyle(item.status);
+        const imgUrl = item.qrImage || generateQrDataUrl(item.amount, item.content);
+
+        document.getElementById('modalSavedQrImg').src = imgUrl;
+        document.getElementById('modalOrderId').textContent = 'Mã phiên QR: ' + item.id;
+        document.getElementById('modalAmount').textContent = item.amount > 0 ? formatVndCurrency(item.amount) : 'Người chuyển tự nhập';
+        document.getElementById('modalStatusBadge').innerHTML = `<span class="px-3 py-1 rounded-full text-xs font-bold border ${st.badgeClass}">${st.label}</span>`;
+        document.getElementById('modalCreatedAt').textContent = formatDateTimeVi(item.createdAt);
+        document.getElementById('modalPaidAt').textContent = item.paidAt ? formatDateTimeVi(item.paidAt) : 'Chưa ghi nhận';
+        document.getElementById('modalContent').textContent = item.content || '(Không có nội dung)';
+        document.getElementById('modalBankTxId').textContent = item.bankTxId || 'Chưa có dữ liệu xác minh từ API';
+        const modal = document.getElementById('detailModal');
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+      }
+
+      function closeHistoryDetailModal() {
+        const modal = document.getElementById('detailModal');
+        modal.classList.add('hidden'); modal.classList.remove('flex');
+        state.inspectingItemId = null;
+      }
+
+      function toggleMobileSidebar(open) {
+        const sidebar = document.getElementById('historySidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (open) { sidebar.classList.remove('-translate-x-full'); backdrop.classList.remove('hidden'); }
+        else { sidebar.classList.add('-translate-x-full'); backdrop.classList.add('hidden'); }
+      }
+
+      function initEventListeners() {
+        const amountInput = document.getElementById('amountInput');
+        const amountErrorMsg = document.getElementById('amountErrorMsg');
+        const messageInput = document.getElementById('messageInput');
+        const refreshAll = () => { state.activeOrderId = null; updateQrAndSummary(); renderActiveVerificationStatus(); renderSidebarHistory(); };
+
+        amountInput.addEventListener('input', e => {
+          const digits = e.target.value.replace(/\D/g, '');
+          if (!digits) { state.amount = 0; e.target.value = ''; amountErrorMsg.classList.add('hidden'); refreshAll(); return; }
+          let v = parseInt(digits, 10);
+          if (v > ACCOUNT_CONFIG.maxNapasAmount) {
+            v = ACCOUNT_CONFIG.maxNapasAmount;
+            amountErrorMsg.textContent = 'Hạn mức tối đa là 499.999.999 VND.';
+            amountErrorMsg.classList.remove('hidden');
+          } else amountErrorMsg.classList.add('hidden');
+          state.amount = v;
+          e.target.value = formatVndDots(v);
+          refreshAll();
+        });
+
+        document.querySelectorAll('.quick-amount-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const v = parseInt(btn.getAttribute('data-amount'), 10);
+            state.amount = v;
+            amountInput.value = formatVndDots(v);
+            amountErrorMsg.classList.add('hidden');
+            refreshAll();
+          });
+        });
+
+        messageInput.addEventListener('input', e => {
+          const clean = sanitizeNapasMessage(e.target.value);
+          if (e.target.value !== clean) e.target.value = clean;
+          state.rawMessage = clean;
+          refreshAll();
+        });
+
+        document.getElementById('btnAppendRefCode').addEventListener('click', () => {
+          const code = 'TT' + Math.floor(1000 + Math.random() * 9000);
+          const cur = sanitizeNapasMessage(messageInput.value).trim();
+          const finalMsg = (cur ? cur + ' ' + code : code).slice(0, 50);
+          messageInput.value = finalMsg;
+          state.rawMessage = finalMsg;
+          refreshAll();
+        });
+
+        document.getElementById('btnSaveNewQr').addEventListener('click', createAndSaveQrSession);
+
+        document.getElementById('btnClearInputs').addEventListener('click', () => {
+          state.amount = 0; state.rawMessage = '';
+          amountInput.value = ''; messageInput.value = '';
+          refreshAll();
+        });
+
+        const copyAcc = () => copyTextToClipboard(ACCOUNT_CONFIG.accountNumber, 'số tài khoản');
+        ['btnTopCopyAccount', 'btnCopyAccountDetail', 'btnCardCopyAccount'].forEach(id => document.getElementById(id).addEventListener('click', copyAcc));
+        const copyMsg = () => copyTextToClipboard(sanitizeNapasMessage(state.rawMessage).trim(), 'nội dung chuyển khoản');
+        ['btnCopyMessage', 'btnCardCopyContent'].forEach(id => document.getElementById(id).addEventListener('click', copyMsg));
+        document.getElementById('btnCopyEmvPayload').addEventListener('click', () => copyTextToClipboard(document.getElementById('emvPayloadDisplay').textContent, 'chuỗi EMVCo QR'));
+
+        document.getElementById('btnDownloadQrPng').addEventListener('click', () => {
+          const canvas = document.getElementById('vietqrCanvas');
+          downloadDataUrlAsPng(canvas.toDataURL('image/png'), `VietQR-ICB-${ACCOUNT_CONFIG.accountNumber}-${state.amount || 'tu-chon'}.png`);
+        });
+
+        document.getElementById('btnDownloadModalQr').addEventListener('click', () => {
+          const item = state.qrHistory.find(x => x.id === state.inspectingItemId);
+          if (!item) return;
+          const img = item.qrImage || generateQrDataUrl(item.amount, item.content);
+          downloadDataUrlAsPng(img, `VietQR-${item.id}-${item.amount || 0}.png`);
+        });
+
+        document.getElementById('btnModeCanvas').addEventListener('click', () => setQrDisplayMode('CANVAS'));
+        document.getElementById('btnModeVietQrApi').addEventListener('click', () => setQrDisplayMode('API_LINK'));
+        document.getElementById('btnCheckStatusNow').addEventListener('click', () => pollBackendVerificationStatus(true));
+
+        document.getElementById('btnToggleSidebar').addEventListener('click', () => toggleMobileSidebar(true));
+        document.getElementById('btnCloseSidebar').addEventListener('click', () => toggleMobileSidebar(false));
+        document.getElementById('sidebarBackdrop').addEventListener('click', () => toggleMobileSidebar(false));
+
+        const tabQr = document.getElementById('tabBtnQrHistory');
+        const tabTx = document.getElementById('tabBtnVerifiedTx');
+        const tabBase = 'px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ';
+        tabQr.addEventListener('click', () => {
+          state.activeTab = 'QR_HISTORY';
+          tabQr.className = tabBase + 'bg-white text-vietin-700 shadow-sm';
+          tabTx.className = tabBase + 'text-slate-600 hover:text-slate-900';
+          renderSidebarHistory();
+        });
+        tabTx.addEventListener('click', () => {
+          state.activeTab = 'VERIFIED_TX';
+          tabTx.className = tabBase + 'bg-white text-emerald-700 shadow-sm';
+          tabQr.className = tabBase + 'text-slate-600 hover:text-slate-900';
+          renderSidebarHistory();
+        });
+
+        document.querySelectorAll('.qr-status-filter').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.statusFilter = btn.getAttribute('data-filter');
+            document.querySelectorAll('.qr-status-filter').forEach(b => {
+              b.className = 'qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-600 hover:bg-slate-200';
+            });
+            btn.className = 'qr-status-filter px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-white';
+            renderSidebarHistory();
+          });
+        });
+
+        document.getElementById('btnClearHistory').addEventListener('click', () => {
+          if (!confirm('Bạn có chắc muốn xóa lịch sử mã QR?')) return;
+          state.qrHistory = []; state.activeOrderId = null;
+          idbStore.clearAll();
+          saveHistoryToStorage(); renderSidebarHistory(); renderActiveVerificationStatus();
+        });
+
+        document.getElementById('btnCloseDetailModal').addEventListener('click', closeHistoryDetailModal);
+        document.getElementById('detailModal').addEventListener('click', e => { if (e.target.id === 'detailModal') closeHistoryDetailModal(); });
+
+        document.getElementById('btnLoadItemToMain').addEventListener('click', () => {
+          const item = state.qrHistory.find(x => x.id === state.inspectingItemId);
+          if (!item) return;
+          state.amount = item.amount;
+          state.rawMessage = item.content || '';
+          state.activeOrderId = item.id;
+          amountInput.value = item.amount > 0 ? formatVndDots(item.amount) : '';
+          messageInput.value = item.content || '';
+          updateQrAndSummary(); renderActiveVerificationStatus(); renderSidebarHistory();
+          closeHistoryDetailModal(); toggleMobileSidebar(false);
+        });
+
+        document.getElementById('btnDeleteHistoryItem').addEventListener('click', () => {
+          if (!state.inspectingItemId) return;
+          state.qrHistory = state.qrHistory.filter(x => x.id !== state.inspectingItemId);
+          saveHistoryToStorage(); renderSidebarHistory(); renderActiveVerificationStatus();
+          closeHistoryDetailModal();
+        });
+
+        // Sao lưu & Khôi phục ra file .json
+        document.getElementById('btnExportBackup').addEventListener('click', () => {
+          const backupData = {
+            exportedAt: new Date().toISOString(),
+            qrHistory: state.qrHistory,
+            verifiedTransactions: state.verifiedTransactions
+          };
+          const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          downloadDataUrlAsPng(url, `VietQR-Backup-${new Date().toISOString().slice(0, 10)}.json`);
+          URL.revokeObjectURL(url);
+          showToast('Đã tải tệp sao lưu toàn bộ lịch sử & ảnh QR!', 'success');
+        });
+
+        document.getElementById('inputImportBackup').addEventListener('change', e => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            try {
+              const parsed = JSON.parse(ev.target.result);
+              if (Array.isArray(parsed.qrHistory)) state.qrHistory = parsed.qrHistory;
+              if (Array.isArray(parsed.verifiedTransactions)) state.verifiedTransactions = parsed.verifiedTransactions;
+              saveHistoryToStorage();
+              renderSidebarHistory();
+              renderActiveVerificationStatus();
+              pollBackendVerificationStatus(true);
+              showToast('Khôi phục lịch sử và ảnh QR thành công!', 'success');
+            } catch (err) { showToast('Tệp sao lưu không hợp lệ', 'error'); }
+          };
+          reader.readAsText(file);
+        });
+
+        const backendModal = document.getElementById('backendModal');
+        document.getElementById('btnOpenApiConfig').addEventListener('click', () => { backendModal.classList.remove('hidden'); backendModal.classList.add('flex'); });
+        document.getElementById('btnBannerConfig').addEventListener('click', () => { backendModal.classList.remove('hidden'); backendModal.classList.add('flex'); });
+        document.getElementById('btnCloseBackendModal').addEventListener('click', () => { backendModal.classList.add('hidden'); backendModal.classList.remove('flex'); });
+
+        document.getElementById('btnSaveAndTestApi').addEventListener('click', async () => {
+          const urlVal = document.getElementById('inputBackendUrl').value.trim() || DEFAULT_BACKEND_URL;
+          state.backendUrl = urlVal;
+          try { localStorage.setItem(STORAGE_KEYS.BACKEND_URL, urlVal); } catch (e) {}
+          await pollBackendVerificationStatus(true);
+        });
+      }
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        await loadHistoryFromStorage();
+        initEventListeners();
+        updateQrAndSummary();
+        renderSidebarHistory();
+        renderActiveVerificationStatus();
+        updateConnectionUiBadge();
+
+        pollBackendVerificationStatus(false);
+        setInterval(() => { if (state.backendUrl) pollBackendVerificationStatus(false); }, 8000);
+      });
+    })();
+  </script>
+</body>
+</html>
